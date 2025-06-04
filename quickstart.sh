@@ -221,6 +221,7 @@ show_menu() {
     echo "9. 📓 Start Jupyter Notebook"
     echo "10. 🐳 Docker Setup"
     echo "11. 📋 System Information"
+    echo "12. 🔄 Complete Pipeline"
     echo "0. 🚪 Exit"
     echo -e "${CYAN}==================================================${NC}"
     echo ""
@@ -268,6 +269,18 @@ train_mil() {
     esac
     cd ../..
 }
+
+run_complete_pipeline() {
+    log "Running complete GRAPHITE pipeline..."
+    mkdir -p outputs/step1_mil outputs/step2_ssl outputs/step3_xai outputs/step4_fusion
+    python main_pipeline.py --config config/pipeline_config.yaml 2>&1 | tee outputs/pipeline.log
+    if [ $? -eq 0 ]; then
+        log "Pipeline completed successfully"
+    else
+        error "Pipeline failed. Check outputs/pipeline.log"
+    fi
+}
+
 
 train_ssl() {
     log "Starting Self-Supervised Learning Training..."
@@ -421,7 +434,7 @@ main() {
     
     while true; do
         show_menu
-        read -p "Please select an option [0-11]: " choice
+        read -p "Please select an option [0-12]: " choice
         
         case $choice in
             1)
@@ -462,12 +475,15 @@ main() {
             11)
                 show_system_info
                 ;;
+            12)
+                run_complete_pipeline
+                ;;
             0)
                 log "Thank you for using GRAPHITE! 🔬"
                 exit 0
                 ;;
             *)
-                error "Invalid option. Please choose 0-11."
+                error "Invalid option. Please choose 0-12."
                 ;;
         esac
         

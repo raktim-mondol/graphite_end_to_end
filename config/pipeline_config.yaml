@@ -1,0 +1,27 @@
+pipeline:
+  name: "GRAPHITE_Pipeline"
+  version: "1.0"
+
+paths:
+  data_root: "dataset/"
+  output_root: "outputs/"
+  models_root: "models/"
+
+step_1_mil:
+  epochs: 50
+  batch_size: 16
+  learning_rate: 0.001
+  early_stopping_patience: 10
+
+step_2_ssl:
+  epochs: 100
+  batch_size: 32
+  learning_rate: 0.0001
+
+step_3_xai:
+  methods: ["gradcam", "attention", "lime"]
+  output_format: ["png", "npy"]
+
+step_4_fusion:
+  fusion_method: "weighted_average"
+  attention_weights: [0.4, 0.6]
