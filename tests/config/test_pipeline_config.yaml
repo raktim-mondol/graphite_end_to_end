@@ -1,0 +1,27 @@
+pipeline:
+  name: "GRAPHITE_Pipeline_Test"
+  version: "1.0"
+
+paths:
+  data_root: "tests/data/"  # Adjust if necessary, assuming test data will be placed here
+  output_root: "tests/outputs/"
+  models_root: "tests/models/"
+
+step_1_mil:
+  epochs: 1
+  batch_size: 1
+  learning_rate: 0.001
+  early_stopping_patience: 1
+
+step_2_ssl:
+  epochs: 1
+  batch_size: 1
+  learning_rate: 0.0001
+
+step_3_xai:
+  methods: ["gradcam"] # Using a single method for faster testing
+  output_format: ["png"]
+
+step_4_fusion:
+  fusion_method: "weighted_average"
+  attention_weights: [0.5, 0.5]

@@ -28,11 +28,23 @@ def main():
                         help='Specific steps to run')
     args = parser.parse_args()
 
+    PROJECT_ROOT = Path(__file__).resolve().parent
     config = load_config(args.config)
 
+    models_root_str = config['paths']['models_root']
+    models_root = Path(models_root_str)
+    if not models_root.is_absolute():
+        models_root = PROJECT_ROOT / models_root_str
+
+    output_root_str = config['paths']['output_root']
+    output_root = Path(output_root_str)
+    if not output_root.is_absolute():
+        output_root = PROJECT_ROOT / output_root_str
+
     data_manager = DataFlowManager(config)
-    model_manager = ModelManager(config['paths']['models_root'])
-    progress_tracker = ProgressTracker(config['paths']['output_root'])
+    # Ensure model_manager and progress_tracker receive string paths
+    model_manager = ModelManager(str(models_root.resolve()))
+    progress_tracker = ProgressTracker(str(output_root.resolve()))
 
     steps = {
         'mil': MILStep(config, data_manager, model_manager, progress_tracker),
@@ -47,7 +59,7 @@ def main():
         print(f"\n🔄 Executing {step.upper()} step...")
         results[step] = steps[step].execute()
 
-    generate_pipeline_report(results, config['paths']['output_root'])
+    generate_pipeline_report(results, str(output_root))
     print("\n✅ Pipeline completed successfully!")
 
 
