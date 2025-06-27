@@ -1,44 +1,54 @@
 ﻿# GRAPHITE End-to-End Automation Wiki
 
-A technical handbook for running, customising and debugging the **GRAPHITE** automated pipeline (`main_pipeline.py`).  
-Everything below assumes you have cloned the repository and installed dependencies (see `README.md` / `SETUP.md`).
+Welcome to the **GRAPHITE** end-to-end (E2E) automation guide.  
+This wiki is **laser-focused** on running, extending and debugging the single-command pipeline that chains:
+
+MIL ➡ SSL ➡ XAI ➡ Fusion
+
+Everything here assumes you have cloned the repo and installed dependencies (see `README.md` / `SETUP.md`).
 
 ---
 
-## 1 | Introduction to E2E Automation
+## 1 | Introduction to the E2E Automation
 
-* **Single entry-point** – execute the full MIL → SSL → XAI → Fusion workflow with one command.  
-* **YAML-driven** – no code edits; all parameters live in `config/pipeline_config.yaml`.  
-* **Stateless steps** – each stage writes atomic outputs to `outputs/<step>/` and may be re-run independently.  
-* **Provenance built-in** – every run produces  
-  * `pipeline_progress.json` – real-time status & timing  
-  * `pipeline_report.yaml`  – aggregated step metrics
+The E2E controller (`main_pipeline.py`) turns four independent research prototypes into **one production-ready workflow**:
+
+* **Single entry-point** – execute the whole pipeline with one command.
+* **Configuration-driven** – zero code edits; everything resides in `config/pipeline_config.yaml`.
+* **Stateless steps** – each stage writes outputs to disk and can be resumed or skipped.
+* **Audit & provenance** – every run outputs `pipeline_progress.json` + `pipeline_report.yaml`.
+
+High-level flow:
 
 ```
-Raw data ─► Step-1 MIL ─► Step-2 SSL ─► Step-3 XAI ─► Step-4 Fusion ─► Reports
+Raw Data ─► MIL Training ─► SSL HierGAT ─► XAI Visuals ─► Fusion ─► Reports
 ```
 
 ---
 
 ## 2 | Pipeline Controller Architecture
 
-| Layer | File | Responsibilities |
-|-------|------|------------------|
-| CLI front-end | `main_pipeline.py` | parse `--config / --steps`, load YAML, initialise utilities |
-| Integration layer | `integration_interfaces.py` | four `StepInterface` subclasses (`MILStep`, `SSLStep`, `XAIStep`, `FusionStep`) |
-| Utility services | `src/data_flow_manager.py`, `src/model_manager.py`, `src/progress_tracker.py` | persist artefacts, manage checkpoints, track timing |
-| Domain modules | `training_step_*`, `visualization_step_*` | untouched research code invoked via integration layer |
+| Layer | File | Responsibility |
+|-------|------|----------------|
+| **CLI Frontend** | `main_pipeline.py` | Parse `--config` / `--steps`, load YAML, initialise utilities |
+| **Integration Layer** | `integration_interfaces.py` | Four `StepInterface` subclasses (MIL, SSL, XAI, Fusion) |
+| **Utility Services** | `src/` | `DataFlowManager`, `ModelManager`, `ProgressTracker` |
+| **Sub-modules** | `training_step_*`, `visualization_step_*` | Domain code – untouched by controller |
 
-Design highlights  
-* **Dynamic importing** – sub-modules loaded only when executed (low memory footprint).  
-* **`sys.argv` patching** – wraps existing CLI scripts transparently.  
-* **Fail-fast / resume-later** – exception halts pipeline, but previous results persist.
+Key design decisions:
+
+* **Dynamic Importing** – steps are imported only when executed → low memory footprint.
+* **`sys.argv` Patching** – wraps CLI scripts without rewriting their code.
+* **Atomic Outputs** – each step writes into `outputs/<step>/` and returns a dict recorded in the report.
+* **Fail-fast, Resume-later** – exception in a step halts pipeline but previous results persist.
 
 ---
 
-## 3 | Configuration Management
+## 3 | Configuration Management & Customization
 
-Everything is controlled by **`config/pipeline_config.yaml`**.
+Everything is centralised in **`config/pipeline_config.yaml`**.
+
+Example (abridged):
 
 ```yaml
 paths:
@@ -49,17 +59,17 @@ paths:
 step_1_mil:
   epochs: 30
   batch_size: 8
-  learning_rate: 5e-4
+  learning_rate: 0.0005
 
 step_2_ssl:
-  data_dir: dataset/ssl_images/
+  data_dir: dataset/training_dataset_step_2/images/
   epochs: 50
   lr: 1e-4
 
 step_3_xai:
   method: gradcam
-  wsi_folder: dataset/wsi/
-  output_folder: vis_xai/
+  wsi_folder: dataset/wsi_images/
+  output_folder: visualization_step_1/output/
 
 step_4_fusion:
   cam_method: fullgrad
@@ -67,134 +77,132 @@ step_4_fusion:
   calculate_metrics: true
 ```
 
-Guidelines  
-* **Boolean flags** – appear only when `true`.  
-* **Lists** – become variadic CLI args (`metrics_thresholds: [0.3,0.5]`).  
-* **`null`** – key is ignored.  
-* Relative paths resolve against repository root.
+**Quick tips**
+
+* **Override on the fly** – keep multiple YAMLs (e.g. `pipeline_gpu.yaml`) and pass with `--config`.
+* **Boolean flags** – just add `flag_name: true` to enable CLI switches.
+* **Path resolution** – relative paths resolve against repo root.
 
 ---
 
-## 4 | Step-by-Step Execution Examples
+## 4 | Step-by-Step Execution Guide
 
-### Full pipeline
+### Run Everything
+
 ```bash
 python main_pipeline.py --config config/pipeline_config.yaml
 ```
 
-### Specific steps only
+### Run Sub-set
+
 ```bash
-# Re-run MIL and SSL
-python main_pipeline.py --config config/pipeline_config.yaml --steps mil ssl
+# only SSL and Fusion (skip MIL & XAI)
+python main_pipeline.py --config config/pipeline_config.yaml --steps ssl fusion
 ```
 
-### Resume after failure
+### Hot-restart After Failure
+
 ```bash
+# suppose SSL crashed; fix config then resume
 python main_pipeline.py --config config/pipeline_config.yaml --steps ssl xai fusion
 ```
 
-Results structure
-```
-outputs/
-├─ step1_mil/
-├─ step2_ssl/
-├─ step3_xai/
-├─ step4_fusion/
-├─ pipeline_progress.json
-└─ pipeline_report.yaml
-```
-
 ---
 
-## 5 | Advanced Usage Patterns
+## 5 | Advanced Usage Patterns & Scenarios
 
 | Scenario | Command / Setting | Notes |
 |----------|-------------------|-------|
-| Hyper-parameter sweep | loop over multiple YAMLs | outputs timestamp-namespaced |
-| CPU-only demo | set `device: cpu` in `step_3_xai`, reduce batch sizes | no GPU required |
-| Distributed SSL | shard `step_2_ssl.data_dir`, run controller per node with `--steps ssl` | merge checkpoints later |
-| CI smoke test | `python main_pipeline.py --steps mil` with mocked torch | fast validation |
-| Dry-run config check | `python main_pipeline.py --steps` (empty) | validates YAML schema only |
+| **Hyper-param sweep** | create multiple YAMLs and loop `main_pipeline.py` | outputs are namespaced by timestamp |
+| **CPU-only demo** | set `device: cpu` in `step_3_xai`; reduce `batch_size` | tests run with mocked torch |
+| **Distributed training** | point `step_2_ssl.data_dir` to shared storage, launch controller on each node with `--steps ssl` | each node trains its slice, later merge checkpoints |
+| **CI pipeline** | call `main_pipeline.py --steps mil` in GH Actions, use `test_integration.py` for fast validation | no GPU needed |
 
 ---
 
-## 6 | Monitoring & Debugging
+## 6 | Monitoring & Debugging the Pipeline
 
-### Real-time progress
+**Real-time progress**
+
 ```bash
 tail -f outputs/pipeline_progress.json
 ```
-Fields: `start`, `end`, `duration`, `error`, `results`.
 
-### Logs
-* MIL – `training_step_1/mil_training.log`  
-* SSL – `training_step_2/self_supervised_training/training.log`  
-* XAI – `visualization_step_1/xai_visualization/xai.log`
+Keys:
 
-Set `LOGLEVEL=DEBUG` for verbose output.
+* `start`, `end`, `duration`
+* `error` – populated on exceptions
+* `results` – arbitrary metrics
 
-### Visual checkpoints
-* MIL curves – `outputs/step1_mil/training_history.png`  
-* SSL loss – `outputs/step2_ssl/loss.png`  
-* XAI heatmaps – `outputs/step3_xai/heatmaps/`
+**Logs**
+
+Each sub-module keeps its own log file (e.g. `mil_training.log`).  
+Set `LOGLEVEL=DEBUG` env var for verbose PyTorch logs.
+
+**Visual checkpoints**
+
+* MIL: `outputs/step1_mil/training_history.png`
+* SSL: loss curves in `outputs/step2_ssl/`
+* XAI: heatmaps under `outputs/step3_xai/heatmaps/`
 
 ---
 
 ## 7 | Integration Layer Technical Details
 
 ```python
-@contextmanager
+# integration_interfaces.py (excerpt)
 def _patched_argv(args):
-    orig = sys.argv[:]
+    original = sys.argv[:]
     sys.argv = ["pipeline_integration"] + args
     try:
         yield
     finally:
-        sys.argv = orig
+        sys.argv = original
 ```
 
-* **`_config_to_cli_args`** – dict → flat CLI list (handles bool / list / None).  
-* **Model hand-off** – `ModelManager.save_model()` stores `state_dict` + git commit hash.  
-* **DataFlowManager** persists any key named `model` or `metrics` automatically.
+* **`_config_to_cli_args`** – converts YAML dict ➜ flat CLI list, handles bool / list / None.
+* **Model hand-off** – `ModelManager.save_model()` stores `state_dict` + metadata; later steps can load.
+* **Data serialization** – any key named `model` or `metrics` in the returned dict is auto-persisted.
 
 ---
 
-## 8 | Performance Optimization
+## 8 | Performance Optimization & Scaling
 
-| Lever | Effect | Location |
-|-------|--------|----------|
+| Lever | Effect | Where to change |
+|-------|--------|-----------------|
 | `step_1_mil.batch_size` | GPU memory | YAML |
-| `step_2_ssl.num_workers` | CPU data loading | YAML |
-| Mixed precision (`--amp`) | 30-40 % speed-up | sub-module CLI |
-| Gradient accumulation | simulate large batch | add `grad_acc` in YAML |
-| Multi-GPU | launch `torchrun main_pipeline.py ...` | controller is GPU-agnostic |
+| `step_2_ssl.num_workers` | data loading CPU usage | YAML |
+| Mixed precision | ~40% speedup | enable `--amp` in respective sub-module CLI |
+| Gradient accumulation | simulate large batch | add `grad_acc: N` under `step_1_mil` |
+| Multi-GPU | launch controller with `torchrun` environment | controller itself is GPU-agnostic |
 
 ---
 
-## 9 | Best Practices & Recommended Workflows
+## 9 | Common Workflows & Best Practices
 
-1. **Prototype small** (`epochs: 1`), verify outputs, then scale.  
-2. **Version YAMLs** – they are immutable experiment manifests.  
-3. **Pin seeds** (`REPRODUCIBILITY.md`) for fair comparison.  
-4. **Archive env** – `pip freeze > env.txt` alongside results.  
-5. **Separate raw vs processed data** (`data_root/raw` vs `.../processed`).
+1. **Prototype locally with small epochs** (`epochs: 1`) then scale.
+2. **Commit YAML files** – they serve as immutable experiment configs.
+3. **Pin random seeds** via `REPRODUCIBILITY.md` to compare runs reliably.
+4. **Version checkpoints** – `ModelManager` already embeds `git commit` hash in metadata.
+5. **Keep raw & processed data separate** (`data_root/raw`, `data_root/processed`).
 
 ---
 
-## 10 | E2E-Specific Troubleshooting
+## 10 | Troubleshooting (E2E Specific)
 
-| Symptom | Likely Cause | Remedy |
-|---------|--------------|--------|
-| `ModuleNotFoundError: torch` in tests | running on minimal CI image | install torch or rely on mocked tests |
-| Step hangs at 0 % GPU | mismatched CUDA / PyTorch build | reinstall matching wheel |
-| `pipeline_progress.json` lacks `end` | crash inside step | inspect sub-module log, fix, restart remaining steps |
-| Fusion metrics NaN | missing masks or wrong thresholds | verify `mask_dir`, adjust `metrics_thresholds` |
-| CUDA OOM during SSL | batch size too high | lower `batch_size`, enable mixed precision |
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `ModuleNotFoundError: torch` during tests | Running unit tests without PyTorch | `pip install torch` **or** rely on mocked tests only |
+| Step hangs at 0% GPU | Wrong CUDA/PyTorch build | reinstall matching CUDA wheel |
+| `pipeline_progress.json` missing `end` time | Pipeline crashed mid-step | inspect sub-module log, re-launch with same `--steps` |
+| Fusion metrics nan | missing masks | check `mask_dir` path in YAML |
+| Out-of-memory during SSL | lower `batch_size`, enable mixed precision | |
 
 ---
 
 ### Need more help?
-* Review **`END_TO_END_INTEGRATION_FIX.md`** for in-depth notes.  
-* Open a GitHub issue with your `pipeline_progress.json` and system specs.  
 
-Happy automating 🚀
+* Review detailed fix notes in **`END_TO_END_INTEGRATION_FIX.md`**
+* Search open issues or open a new one with the failing `pipeline_progress.json`
+
+Happy researching! 🚀
