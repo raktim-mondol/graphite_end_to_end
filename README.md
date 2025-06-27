@@ -126,6 +126,72 @@ python visualization_step_2/fusion_visualization/main_final_fusion.py
 **📋 For complete data organization guide:** [DATA_STRUCTURE.md](DATA_STRUCTURE.md)  
 **🔄 For exact reproducibility steps:** [REPRODUCIBILITY.md](REPRODUCIBILITY.md)
 
+## 🚦 End-to-End Implementation
+
+The **GRAPHITE** repository now ships with an automated controller that orchestrates the *entire* 4-stage workflow from a single command.  
+This makes it easy to go from raw data to final fused saliency maps in one shot while retaining the flexibility to run or re-run individual stages.
+
+### 1. Pipeline Controller
+
+```bash
+# Run everything (MIL ➜ SSL ➜ XAI ➜ Fusion)
+python main_pipeline.py --config config/pipeline_config.yaml
+```
+
+Internally, the controller:
+
+| Step | Sub-Module | Entry Point |
+|------|------------|-------------|
+| 1️⃣  MIL Training            | `training_step_1`                              | `run_training.py` |
+| 2️⃣  SSL / HierGAT Training  | `training_step_2/self_supervised_training`     | `train.py` |
+| 3️⃣  XAI Visualisation       | `visualization_step_1/xai_visualization`       | `main.py` |
+| 4️⃣  Saliency Fusion         | `visualization_step_2/fusion_visualization`    | `main_final_fusion.py` |
+
+### 2. Configuration Driven
+
+All hyper-parameters and paths live in **`config/pipeline_config.yaml`**.  
+Edit a single file to adjust:
+
+* dataset / output / model root folders  
+* training epochs, batch-sizes, learning-rates, etc.  
+* XAI method (`gradcam`, `lime`, `attention`, …)  
+* Fusion settings (`cam_method`, `fusion_method`, metric thresholds)
+
+### 3. Running Specific Steps
+
+```bash
+# Re-run only MIL and SSL
+python main_pipeline.py --config config/pipeline_config.yaml --steps mil ssl
+
+# Skip long SSL step, do XAI + Fusion only
+python main_pipeline.py --config config/pipeline_config.yaml --steps xai fusion
+```
+
+### 4. Outputs & Progress Tracking
+
+After completion you will find:
+
+```
+outputs/
+├─ step1_mil/
+├─ step2_ssl/
+├─ step3_xai/
+├─ step4_fusion/
+├─ pipeline_progress.json   # timing & status of each step
+└─ pipeline_report.yaml     # aggregated metrics
+```
+
+`pipeline_progress.json` is continuously updated so you can monitor long runs in real time.
+
+### 5. Troubleshooting End-to-End Runs
+
+* **Partial runs** – If the pipeline stops midway, simply re-launch with `--steps` for the remaining stages.  
+* **Config typos** – Schema errors are reported early; verify key names in `pipeline_config.yaml`.  
+* **GPU exhaustion** – Reduce batch-sizes in `step_1_mil` or `step_2_ssl` sections.  
+* **Further details** – See **[`END_TO_END_INTEGRATION_FIX.md`](END_TO_END_INTEGRATION_FIX.md)** for a deep dive into the integration layer.
+
+---
+
 ## 📖 Usage
 
 ### Basic Commands
