@@ -14,14 +14,60 @@ step_1_mil:
   early_stopping_patience: 10
 
 step_2_ssl:
+  # --- I/O ---
+  data_dir: "dataset/training_dataset_step_2/images/"
+  config: "training_step_2/self_supervised_training/config/config.yaml"
+  output_dir: "training_step_2/self_supervised_training/output/"
+
+  # --- Training ---
   epochs: 100
   batch_size: 32
-  learning_rate: 0.0001
+  lr: 0.0001
+  weight_decay: 1e-5
+
+  # --- Model ---
+  input_dim: 128
+  hidden_dim: 128
+  num_heads: 4
+  num_gat_layers: 3
+  dropout: 0.1
+
+  # --- Loss ---
+  temperature: 0.07
+  alpha: 0.5
+  beta: 0.5
+  tau: 0.1
+
+  # --- Misc ---
+  resume: null         # Path to checkpoint to resume, if any
+  num_workers: 4
 
 step_3_xai:
-  methods: ["gradcam", "attention", "lime"]
+  method: "gradcam"                       # Choose one: gradcam | hirescam | scorecam | etc.
+  wsi_folder: "dataset/wsi_images/"
+  mask_folder: "dataset/masks/"
+  output_folder: "visualization_step_1/output/"
+  model_path: "training_step_1/mil_classification/output/best_model.pth"
+
+  # Optional advanced args mirroring CLI defaults
+  patch_size: 224
+  stride: 224
+  target_class: 1
+  device: "auto"                         # auto | cpu | cuda
+  seed: 78
+  verbose: false
   output_format: ["png", "npy"]
 
 step_4_fusion:
-  fusion_method: "weighted_average"
+  cam_method: "fullgrad"                                   # fullgrad | gradcam | ...
+  fusion_method: "confidence"                              # optimal | weighted | adaptive | multiscale | confidence
+  model_path: "training_step_2/self_supervised_training/output/best_model.pt"
+  mil_model_path: "training_step_1/mil_classification/output/best_model.pth"
+  dataset_dir: "dataset/training_dataset_step_1/tma_core/"
+  save_dir: "visualization_step_2/output/visualization_results/"
+  mask_dir: "dataset/training_dataset_step_2/mask/"
+  calculate_metrics: true
+  metrics_thresholds: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+  # Legacy weight list still accepted by some fusion flavours
   attention_weights: [0.4, 0.6]
